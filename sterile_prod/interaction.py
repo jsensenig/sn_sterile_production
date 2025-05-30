@@ -1,6 +1,6 @@
 import numpy as np
-from boltzmann_integration.integral import (M_t, grid_t, particle_t, reaction_t)
-from utils import Units, PhysicalConstants
+from extern.boltzmann_integration.integral import (M_t, grid_t, particle_t, reaction_t)
+from sterile_prod.utils import Units, PhysicalConstants
 
 
 class Particle:

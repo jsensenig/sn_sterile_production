@@ -1,8 +1,8 @@
 import numpy as np
 import pickle
 from tqdm import tqdm
-from interaction import Interaction, LinearSpacedGrid, LogSpacedGrid
-from boltzmann_integration.integral import integration, CollisionIntegralKind
+from sterile_prod.interaction import Interaction, LinearSpacedGrid, LogSpacedGrid
+from extern.boltzmann_integration.integral import integration, CollisionIntegralKind
 from scipy.integrate import trapezoid
 
 
@@ -201,10 +201,11 @@ class RadiusIntegral:
         variables only contribute constant factors. The radius of the core is configurable but a
         suggested radius is 20km, reference: https://arxiv.org/pdf/2503.13607
         """
-        delta_radius = np.diff(supernova_sim['radius'][::self.radius_sample_step])
+        delta_radius = np.diff(supernova_sim['radius'])#[::self.radius_sample_step])
         grav_lapse = supernova_sim['grav_lapse']
         total_radius = supernova_sim['radius'][1:]
-        index_range = range(1, self.radius_sample_step * len(total_radius[::self.radius_sample_step]), self.radius_sample_step)
+        index_range = range(0, self.radius_sample_step * len(total_radius[::self.radius_sample_step])-1, self.radius_sample_step)
+        print("Radius idx range: ", index_range, "/", len(total_radius[::self.radius_sample_step]))
 
         for idx, radius in zip(index_range, total_radius[::self.radius_sample_step]):
             if (idx % 25) == 0 and idx != 0: print("Core Radius:", round(radius * 1.e-5, 2), "[km]")
@@ -260,7 +261,9 @@ class RadiusIntegral:
         """
         print("input_idx", input_idx)
         # delta_time, supernova_sim = input_args
-        delta_time, supernova_sim = instance.delta_time[input_idx:input_idx+2], instance.supernova_sim[input_idx:input_idx+2]
+        time_step = 4 if len(instance.supernova_sim) > (input_idx + 4) else len(instance.supernova_sim) - input_idx
+        delta_time, supernova_sim = instance.delta_time[input_idx:input_idx+time_step], instance.supernova_sim[input_idx:input_idx+time_step]
+        print("input_idx:input_idx+time_step", input_idx, ":", input_idx+time_step)
         # FIXME should be midpoint in radius integral
         ps = instance.collision_integral.get_ps(grid=instance.collision_integral.grid)
         sterile_energy = instance.energy(momentum=ps, mass=instance.collision_integral.sterile_mass)
@@ -280,7 +283,7 @@ class RadiusIntegral:
                 radius_integral += integral * ps * sterile_energy * absorption
             radius_integral *= dt
 
-        return sum(radius_integral)
+        return radius_integral
 
     def sterile_differential_luminosity(self, supernova_sim, save_to_file=True):
         """
