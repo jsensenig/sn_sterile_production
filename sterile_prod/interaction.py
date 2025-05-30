@@ -1,5 +1,6 @@
 import numpy as np
 from boltzmann_integration.integral import (M_t, grid_t, particle_t, reaction_t)
+from utils import Units, PhysicalConstants
 
 
 class Particle:
@@ -8,10 +9,12 @@ class Particle:
         self.kwargs = kwargs
 
         # Initialize the particles
+        Units.init_units()
         self.particle_mass()
         self.particle_species = {}
         self.define_particle_species()
         self.consts = PhysicalConstants()
+
 
     @classmethod
     def particle_mass(cls):
@@ -43,6 +46,9 @@ class Particle:
 
     def map_dict_to_particle(self, particle):
         """Must return variables in order `make_particle()` expects. """
+        # print(particle['distribution'](energy=self.energy(particle['grid'].TEMPLATE, particle['mass']),
+        #                                  temperature=particle['T'],
+        #                                  chem_potential=particle['mu']))
         return (particle['mass'],
                 particle['eta'],
                 particle['in_equil'],
@@ -95,6 +101,9 @@ class Particle:
          These should all be in units of MeV
          chem_potential: mu
         """
+        # print(energy[0], "/", energy[-1])
+        # dist = 1. / (np.exp((energy - chem_potential) / temperature) + 1.)
+        # print(np.count_nonzero(dist < 0))
         return 1. / (np.exp((energy - chem_potential) / temperature) + 1.)
 
     def bose_statistics(self, energy, temperature, chem_potential=0):
@@ -114,7 +123,11 @@ class Particle:
 
 class Interaction(Particle):
     def __init__(self, num_samples, max_momentum, **kwargs):
+
         super().__init__(**kwargs)
+        Units.init_units()
+        self.mev_units = Units.MeV
+        self.gf_units = PhysicalConstants.G_F
         self.kwargs = kwargs
         self.num_samples = num_samples
         self.max_momentum = max_momentum
@@ -292,27 +305,92 @@ class Interaction(Particle):
             'element': {'K1': k1_element, 'K2': k2_element, 'order': (3, 1, 2, 0)}
         }
 
-        # G1 = 1. * (1.27 + 1) ** 2  # 2(GA + GV)^2 = 2(0.5*1.27 + 0.5)^2
-        # G2 = 1. * (1.27 - 1) ** 2
-        # G3 = 2. * ((0.5 * 1.27) ** 2 - 0.25)
-        # k1_element = 1. * sterile_mixing * (G1 + G2)
-        # k2_element = -G3 * sterile_mixing * (self.particle_species['proton']['mass'] * self.particle_species['neutron']['mass'])
-        # self.matrix_elements[9] = {
-        #     'interaction': [self.particle_species['muon'], self.particle_species['proton'], self.particle_species['neutron'],
-        #                     self.particle_species['nu_s']],
-        #     'element': {'K1': k1_element, 'K2': k2_element, 'order': (3, 1, 2, 0)}
-        # }
-        #
-        # self.matrix_elements[10] = {
-        #     'interaction': [self.particle_species['muon'], self.particle_species['nu_e'], self.particle_species['electron'],
-        #                     self.particle_species['nu_s']],
-        #     'element': {'K1': 8 * sterile_mixing, 'K2': 0, 'order': (3, 1, 2, 0)}
-        # }
+        G1 = 1. * (1.27 + 1) ** 2  # 2(GA + GV)^2 = 2(0.5*1.27 + 0.5)^2
+        G2 = 1. * (1.27 - 1) ** 2
+        G3 = 2. * ((0.5 * 1.27) ** 2 - 0.25)
+        k1_element = 1. * sterile_mixing * (G1 + G2)
+        k2_element = -G3 * sterile_mixing * (self.particle_species['proton']['mass'] * self.particle_species['neutron']['mass'])
+        self.matrix_elements[9] = {
+            'interaction': [self.particle_species['muon'], self.particle_species['proton'], self.particle_species['neutron'],
+                            self.particle_species['nu_s']],
+            'element': {'K1': k1_element, 'K2': k2_element, 'order': (3, 1, 2, 0)}
+        }
+
+        self.matrix_elements[10] = {
+            'interaction': [self.particle_species['muon'], self.particle_species['nu_e'], self.particle_species['electron'],
+                            self.particle_species['nu_s']],
+            'element': {'K1': 8 * sterile_mixing, 'K2': 0, 'order': (3, 1, 2, 0)}
+        }
 
 
         self.current_interaction = 'nu_tau'
 
         return self.matrix_elements
+
+    def sterile_decays(self, sterile_mass, sterile_mixing, nu_flavor):
+        """
+        All units are in GeV of natural units.
+        Note: The decay widths are multiplied by a factor of 2 to account for the
+              charge conjugated process (in `units_factor`).
+        """
+        if nu_flavor == 'nu_mu':
+            lepton_mass = 0.1057
+        elif nu_flavor == 'nu_tau':
+            lepton_mass = 1.1
+        else:
+            print('Unknown neutrino flavor:', nu_flavor)
+            raise ValueError
+
+        pi0_mass = 0.135
+        pip_mass = 0.140
+        weak_mixing_sin_theta = 0.23
+        ckm_element_ud = 0.974
+
+        alpha_em = 1. / 137.
+        f_pi0 = pi0_mass
+        x_pi0 = pi0_mass / sterile_mass
+        x_mu = lepton_mass / sterile_mass
+        x_pip = pip_mass / sterile_mass
+        units_factor = ((1.166e-5) ** 2) * sterile_mixing * (sterile_mass ** 3) * 2.
+
+        def kallen_func(a, b, c):
+            return a ** 2 + b ** 2 + c ** 2 - 2. * a * b - 2. * b * c - 2. * c * a
+
+        decay_rate_dict = {}
+
+        # Decay rate of sterile nu to a single gamma
+        decay_rate_dict['to_gamma'] = (9. * alpha_em * sterile_mass ** 2) / (2048 * np.pi ** 4)
+        decay_rate_dict['to_gamma'] *= units_factor
+
+        # Decay rate of sterile nu to a single pi0, note the kinematic cutoff at < pi0 mass
+        if sterile_mass >= f_pi0:
+            decay_rate_dict['to_pi0'] = (f_pi0 ** 2) * ((1 - x_pi0 ** 2) ** 2) / (32. * np.pi)
+            decay_rate_dict['to_pi0'] *= units_factor
+
+        # Decay rate of sterile nu to a neutrino - anti-neutrino pair
+        decay_rate_dict['to_two_nu'] = (sterile_mass ** 2) / (192 * np.pi ** 3)
+        decay_rate_dict['to_two_nu'] *= units_factor
+
+        # Decay rate of sterile nu to electron - positron pair
+        decay_rate_dict['to_electron_positron'] = (0.25 - weak_mixing_sin_theta ** 2 + 2. * weak_mixing_sin_theta ** 4) * (
+                                                              sterile_mass ** 2) / (192 * np.pi ** 3)
+        decay_rate_dict['to_electron_positron'] *= units_factor
+
+        # Decay rate of sterile nu to an electron neutrino, positron and muon
+        if sterile_mass >= lepton_mass:
+            decay_rate_dict['to_nue_positron_muon'] = ((sterile_mass ** 2) / (384 * np.pi ** 3)) * (
+                        2. * (1 - x_mu ** 2) * (2. + 9. * x_mu ** 2) + (2. * x_mu ** 2) * (1 - x_mu ** 2) * (
+                        -6. - 6. * x_mu ** 2 + x_mu ** 4 + 6. * np.log(x_mu ** 2)))
+            decay_rate_dict['to_nue_positron_muon'] *= units_factor
+
+        # Decay rate of sterile nu to a muon and pi+
+        if sterile_mass >= (lepton_mass + 0.140):
+            decay_rate_dict['to_muon_pi+'] = ((0.135 * ckm_element_ud) ** 2 / (16. * np.pi)) * np.sqrt(
+                kallen_func(a=1, b=x_pip ** 2, c=x_mu ** 2)) * (
+                                                         1. - x_pip ** 2 - (x_mu ** 2) * (2. + x_pip ** 2 - x_mu ** 2))
+            decay_rate_dict['to_muon_pi+'] *= units_factor
+
+        return decay_rate_dict
 
     @staticmethod
     def energy(momentum, mass):
@@ -343,20 +421,20 @@ class Interaction(Particle):
     def get_reaction(self, interaction, grid, supernova_sim, index):
 
         # Update the radius dependent variables
-        temp = supernova_sim['temp'][index] * Units.MeV
+        temp = supernova_sim['temp'][index] * self.mev_units
 
         reaction_list = []
         for i, part in enumerate(interaction['interaction']):
             side = -1 if i < 2 else 1  # 0+1 -> 2+3 LHS is -1 and RHS is +1
             stats = self.fermi_statistics if part['statistic'] == 'fermi' else self.sterile_statistics
-            chem_potential = supernova_sim[part['chemical_potential']][index] * Units.MeV
+            chem_potential = supernova_sim[part['chemical_potential']][index] * self.mev_units
             p = self.set_particle(mass=part['mass'], grid=grid, distribution=stats, side=side, temp=temp, mu=chem_potential)
             reaction_list.append(p)
 
         return reaction_list
 
     def create_matrix_element(self, matrix_element, sterile_nu_mixing):
-        const = 8 * self.physical_const.G_F ** 2  # MeV
+        const = 8 * self.gf_units**2  # MeV
         k1 = matrix_element['K1'] * sterile_nu_mixing * const
         k2 = matrix_element['K2'] * sterile_nu_mixing * const
         return M_t(list(matrix_element['order']), k1, k2, 0)
@@ -387,11 +465,11 @@ class LinearSpacedGrid(object):
 
     def __init__(self, MOMENTUM_SAMPLES=None, MAX_MOMENTUM=None):
         if not MAX_MOMENTUM:
-            MAX_MOMENTUM = 100* Units.MeV
+            MAX_MOMENTUM = 500 * Units.MeV
         if not MOMENTUM_SAMPLES:
             MOMENTUM_SAMPLES = 100
 
-        self.MIN_MOMENTUM = 0
+        self.MIN_MOMENTUM = 0. * Units.MeV
         self.MAX_MOMENTUM = MAX_MOMENTUM
         self.BOUNDS = (self.MIN_MOMENTUM, self.MAX_MOMENTUM)
         self.MOMENTUM_SAMPLES = MOMENTUM_SAMPLES
@@ -414,11 +492,11 @@ class LogSpacedGrid(object):
 
     def __init__(self, MOMENTUM_SAMPLES=None, MAX_MOMENTUM=None):
         if not MAX_MOMENTUM:
-            MAX_MOMENTUM = 100.* Units.MeV
+            MAX_MOMENTUM = 500.* Units.MeV
         if not MOMENTUM_SAMPLES:
             MOMENTUM_SAMPLES = 100
 
-        self.MIN_MOMENTUM = 0
+        self.MIN_MOMENTUM = 0. * Units.MeV
         self.MAX_MOMENTUM = self.MIN_MOMENTUM + MAX_MOMENTUM
         self.BOUNDS = (self.MIN_MOMENTUM, self.MAX_MOMENTUM)
         self.MOMENTUM_SAMPLES = MOMENTUM_SAMPLES
@@ -433,51 +511,3 @@ class LogSpacedGrid(object):
             * (base ** np.arange(0, self.MOMENTUM_SAMPLES, 1) - 1.)
             / (base ** (self.MOMENTUM_SAMPLES - 1.) - 1.)
         )
-
-class Units:
-    def __init__(self, **kwargs):
-        self.init_units()
-
-    @classmethod
-    def init_units(cls):
-        cls.eV = 1.e-9
-        cls.keV = cls.eV * 1.e3
-        cls.MeV = cls.keV * 1.e3
-        cls.GeV = cls.MeV * 1.e3
-        cls.TeV = cls.GeV * 1.e3
-        cls.sec = 1e22 / 6.582119 / cls.MeV
-        cls.kg = 1e27 / 1.782662 * cls.GeV
-        cls.m = 1e15 / 1.239842 / cls.GeV
-        cls.N = 1e-5 / 8.19 * cls.GeV**2
-
-        # Temperature: $10^9 K$
-        cls.K9 = cls.MeV / 11.6045
-        cls.g_cm3 = cls.MeV**4 / 2.32011575e5
-
-class PhysicalConstants:
-    def __init__(self, **kwargs):
-        self.init_physical_constants()
-
-    @classmethod
-    def init_physical_constants(cls):
-        """ ### Physical constants """
-
-        # Planck mass
-        cls.M_p = 1.2209 * 1e22 * Units.MeV
-        # Gravitational constant
-        cls.G = 1 / cls.M_p ** 2
-        # Fermi constant
-        cls.G_F = (1.166 * 1e-5 / Units.MeV ** 2)
-        # Reduced Planck constant
-        cls.hbar = 6.582e-22  # MeV * s
-        # Speed of light
-        cls.c_cm = 299792458 * 100  # cm /s
-        # Hubble constant
-        cls.H = 1. / (4.55e17 * Units.sec)
-        # Weinberg angle
-        cls.sin_theta_w_2 = 0.2312
-        cls.gR = cls.sin_theta_w_2
-        cls.gL = cls.sin_theta_w_2 - 0.5
-
-
-

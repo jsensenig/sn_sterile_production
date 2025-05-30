@@ -111,12 +111,35 @@ dbl distribution_interpolation(const std::vector<dbl> &grid,
 
 
 dbl distribution_interpolation(const particle_t &specie, dbl p) {
-    return distribution_interpolation(
+
+//    std::cout << "+++++++++++++++++++++++++++" << std::endl;
+//    py::print("+++++++++++++++++++++++++++");
+//    for (auto grid : specie.grid.grid) if (std::isnan(grid)) py::print("GRID: ", grid);
+//    for (auto dist : specie.grid.distribution) if (std::isnan(dist)) py::print("DIST: ", dist);
+//    py::print("P: ", p);
+//    py::print("M: ", specie.m);
+//    py::print("ETA: ", specie.eta);
+//    py::print("T: ", specie.T);
+//    py::print("EQ: ", specie.in_equilibrium);
+//    for (auto grid : specie.grid.grid) if (std::isnan(grid)) std::cout << grid << " ";
+//    std::cout << "DIST" << std::endl;
+//    for (auto dist : specie.grid.distribution) if (std::isnan(dist)) std::cout << dist << " ";
+//    std::cout << "DBL" << std::endl;
+//    std::cout << p << " |p| " << std::endl;
+//    std::cout << specie.m << " |m| " << std::endl;
+//    std::cout << specie.eta << " |eta| " << std::endl;
+//    std::cout << specie.T << " |T| " << std::endl;
+//    std::cout << specie.in_equilibrium << " |equi| " << std::endl;
+    dbl interp = distribution_interpolation(
         specie.grid.grid, specie.grid.distribution,
         p,
         specie.m, specie.eta,
         specie.T, specie.in_equilibrium
     );
+//    std::cout << "--> interp: " << interp << " |inter| " << std::endl;
+//    py::print("Interp: ", interp);
+//    if (std::isnan(interp)) interp = 0.1;
+    return interp;
 }
 
 
@@ -169,7 +192,9 @@ dbl F_B(const std::vector<reaction_t> &reaction, const std::array<dbl, 4> &f, in
 
     for (int i = 0; i < 4; ++i) {
         if (i != skip_index) {
+//            std::cout << "i/f[i]: " << i << " / " << f[i] << std::endl;
             if (f[i] < 0) {
+                std::cout << "throw: -> i/f[i]: " << i << " / " << f[i] << " ||| " << std::endl;
                 throw std::runtime_error("Negative value of distribution function");
             }
             // -1 is LHS and +1 is RHS of a+b <-> c+d reaction
