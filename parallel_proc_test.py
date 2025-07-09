@@ -117,3 +117,10 @@ if __name__ == "__main__":
     results = Parallel(n_jobs=4)(delayed(local_inst.multiproc_sterile_differential_number)(local_inst, idx) for idx in index_list)
     print(results)
     # local_inst.multiproc_sterile_differential_number(local_inst, 0)
+
+    out_dict = {'time_index': index_list,
+                'result': results}
+    output_file = "abs_diff_luminosity_u13_m50.pkl"
+    with open(output_file, 'wb') as f:
+        pickle.dump(out_dict, f)
+    print("Saved Result to file", output_file)

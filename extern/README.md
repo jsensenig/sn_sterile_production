@@ -22,3 +22,24 @@ by running, in this directory,
 ```bash
 pip install .
 ```
+
+---
+## Compile Requirements
+
+You will need to install the following packages in your conda environment,
+assuming you're installing from the conda-forge channel
+
+```bash
+conda install clangxx (clang++)
+conda install llvm-openmp (OpenMP)
+conda install gsl (GSL) 
+```
+
+This should give you the required packages to compile the integration code.
+You will need to point the `Makefile` to your GSL installation, both the
+include and library, for example this is my include, 
+```bash
+-I/nevis/houston/home/jsen/.conda/envs/sterile_nu_prod/include
+```
+
+this should be generalized but is on the ToDo list for now.

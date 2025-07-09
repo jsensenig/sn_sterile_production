@@ -33,7 +33,7 @@ class PhysicalConstants:
         # Gravitational constant
         cls.G = 1 / cls.M_p ** 2
         # Fermi constant
-        cls.G_F = (1.166 * 1e-5 / Units.MeV ** 2)
+        cls.G_F = (1.166 * 1e-5)
         # Reduced Planck constant
         cls.hbar = 6.582e-22  # MeV * s
         # Speed of light

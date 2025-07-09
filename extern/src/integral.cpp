@@ -667,7 +667,7 @@ std::vector<dbl> integration(
             }
         }
         if (reaction_type == Kinematics::CREATION) {
-            if (reaction[3].specie.m == 0.) {continue; }
+            if (reaction[3].specie.m == 0.) { continue; }
             dbl max = energy(max_3, reaction[3].specie.m) - reaction[2].specie.m - energy(p0, reaction[0].specie.m);
             dbl max2 = pow(max, 2) - pow(reaction[1].specie.m, 2);
             if (max <= 0 || max2 <= 0) {
@@ -696,7 +696,7 @@ std::vector<dbl> integration(
             // abseps *= 1e-20;
         }
 
-        size_t subdivisions = 100000;
+        size_t subdivisions = 1000; // original = 100000
         gsl_integration_workspace *w1 = gsl_integration_workspace_alloc(subdivisions);
         gsl_integration_workspace *w2 = gsl_integration_workspace_alloc(subdivisions);
         struct integration_params params = {
