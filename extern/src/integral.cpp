@@ -156,11 +156,13 @@ dbl F_A(const std::vector<reaction_t> &reaction, const std::array<dbl, 4> &f, in
     /*
     Forward reaction distribution functional term
     \begin{equation}
-        \mathcal{F}_A = - f_1 f_2 (1 \pm f_3) (1 \pm f_4)
+        \mathcal{F}_A = f_1 f_2 (1 \pm f_3) (1 \pm f_4)
     \end{equation}
+    Change from: \mathcal{F}_A = - f_1 f_2 (1 \pm f_3) (1 \pm f_4)
     :param skip_index: Particle to skip in the expression
     */
 
+    // Use +1 instead
     dbl temp(1.);
 
     for (int i = 0; i < 4; ++i) {
@@ -356,7 +358,7 @@ dbl integrand_full(
         case CollisionIntegralKind::F_creation:
             return temp * F_creation(reaction, f);
         case CollisionIntegralKind::F_decay:
-            return temp * F_decay(reaction, f);
+            return - temp * F_decay(reaction, f);
         case CollisionIntegralKind::F_1_vacuum_decay:
             return temp * F_1_vacuum_decay(reaction, f);
         case CollisionIntegralKind::F_f_vacuum_decay:
