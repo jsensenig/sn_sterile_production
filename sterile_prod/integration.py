@@ -7,20 +7,20 @@ from scipy.integrate import trapezoid
 
 
 class CollisionIntegral:
-    def __init__(self, interaction_type, grid_type, num_samples, max_momentum):
+    def __init__(self, interaction_type, grid_type, num_samples, max_momentum, min_momentum, step_size):
         self.interaction_type = interaction_type
         self.num_samples = num_samples
         self.max_momentum = max_momentum
-        self.interactions = Interaction(num_samples=num_samples, max_momentum=max_momentum)
+        self.interactions = Interaction(num_samples=num_samples, max_momentum=max_momentum, min_momentum=min_momentum)
         self.interaction_list = None
 
         self.sterile_mass = None
         self.sterile_mixing = None
 
-        self.stepsize = 1.0e-2
+        self.stepsize = step_size #1.0e-2
         self.grid = None
         if grid_type == 'linear':
-            self.grid = LinearSpacedGrid(MOMENTUM_SAMPLES=self.num_samples, MAX_MOMENTUM=self.max_momentum)
+            self.grid = LinearSpacedGrid(MOMENTUM_SAMPLES=self.num_samples, MAX_MOMENTUM=self.max_momentum, MIN_MOMENTUM=min_momentum)
         elif grid_type == 'log':
             self.grid = LogSpacedGrid(MOMENTUM_SAMPLES=self.num_samples, MAX_MOMENTUM=self.max_momentum)
         else:
@@ -38,11 +38,11 @@ class CollisionIntegral:
                                                                           interaction_list=self.interaction_type)
         print("Loaded {} interactions".format(len(self.interaction_list)))
 
-    def integrate_interactions(self, sn_sim, index, collision_kind):
+    def integrate_interactions(self, sn_sim, index, collision_kind, is_absorption):
         ps = self.get_ps(grid=self.grid)
         collision_integral = 0
         for interaction in self.interaction_list.values():
-            reaction_list = self.interactions.get_reaction(interaction=interaction, grid=self.grid, supernova_sim=sn_sim, index=index)
+            reaction_list = self.interactions.get_reaction(interaction=interaction, grid=self.grid, supernova_sim=sn_sim, index=index, is_absorption=is_absorption)
             reaction = self.interactions.make_reaction(reaction=reaction_list)
             mtx_elm = self.interactions.create_matrix_element(matrix_element=interaction['element'], sterile_nu_mixing=self.sterile_mixing)
             integral_result = self.integrate(momentum=ps.tolist(), reaction_list=reaction_list, creaction=reaction,
@@ -53,11 +53,11 @@ class CollisionIntegral:
 
     def integrate(self, momentum, reaction_list, creaction, mtx_element, collision_kind):
         return integration(momentum,
-                           reaction_list[1]['grid'].MIN_MOMENTUM,
-                           reaction_list[1]['grid'].MAX_MOMENTUM,
-                           reaction_list[2]['grid'].MIN_MOMENTUM,
-                           reaction_list[2]['grid'].MAX_MOMENTUM,
-                           reaction_list[3]['grid'].MAX_MOMENTUM,
+                           reaction_list[1]['grid'].MIN_MOMENTUM+0.,
+                           reaction_list[1]['grid'].MAX_MOMENTUM+10.,
+                           reaction_list[2]['grid'].MIN_MOMENTUM+0.,
+                           reaction_list[2]['grid'].MAX_MOMENTUM+10.,
+                           reaction_list[3]['grid'].MAX_MOMENTUM+10.,
                            creaction, mtx_element, self.stepsize, collision_kind)
     @staticmethod
     def get_ps(grid):
@@ -68,9 +68,9 @@ class CollisionIntegral:
 
 
 class RadiusIntegral:
-    def __init__(self, interaction_type, grid_type, collision_kind, num_samples, max_momentum, core_cutoff,
-                 delta_time, include_absorption=True, include_lapse=True, save_to_file=True, output_file=None,
-                 radius_sample_step=1):
+    def __init__(self, interaction_type, grid_type, collision_kind, num_samples, max_momentum, min_momentum, core_cutoff,
+                 abs_cutoff, delta_time, include_absorption=True, include_lapse=True, save_to_file=True, output_file=None,
+                 radius_sample_step=1, step_size=1e-2):
 
         self.save_to_file = save_to_file
         self.output_file = output_file
@@ -80,13 +80,16 @@ class RadiusIntegral:
 
         self.delta_time = delta_time
         self.core_cutoff = core_cutoff * 1.e5 # convert km to cm
+        self.abs_cutoff = abs_cutoff * 1.e5  # convert km to cm
         # self.luminosity_unit_conversion = 3.62e59 #3.e54 #3.e67
-        # self.luminosity_unit_conversion = 8.20e35 # why? useing 1cm=8.1*10^12GeV ??
-        self.number_density_conversion = 1.31e53 # using 1GeV=5.1*10^17cm^-1
-        self.luminosity_unit_conversion = self.number_density_conversion * 1.602e-3  # using 1GeV=1.602*10^-3ergs
+        # self.luminosity_unit_conversion = 8.20e35 # why? using 1cm=8.1*10^12GeV ??
+        # Unit conversion: https://www.seas.upenn.edu/~amyers/NaturalUnits.pdf
+        self.number_density_conversion = 1.31e53 * (2. * np.pi)**3 # cm^-3 (using 1GeV=5.08*10^17cm^-1)
+        self.luminosity_unit_conversion = self.number_density_conversion #* 1.602e-3  # using 1GeV=1.602*10^-3ergs
         self.supernova_sim = None
         self.collision_integral = CollisionIntegral(interaction_type=interaction_type, grid_type=grid_type,
-                                                    num_samples=num_samples,max_momentum=max_momentum)
+                                                    num_samples=num_samples,max_momentum=max_momentum,
+                                                    min_momentum=min_momentum, step_size=step_size)
 
         self.collision_kind = None
         if collision_kind == 'f1':
@@ -118,7 +121,8 @@ class RadiusIntegral:
             supernova_sim_dict = {'radius': sn_data[:, 0], 'density': sn_data[:, 2],'temp': sn_data[:, 4],
                                   'grav_lapse': sn_data[:, 7], 'mu_nu': sn_data[:, 8], 'mu_e': sn_data[:, 9],
                                   'mu_n': sn_data[:, 10], 'mu_p': sn_data[:, 11], 'mu_mu': sn_data[:, 12],
-                                  'mu_nu_mu': sn_data[:, 13]}
+                                  'mu_nu_mu': sn_data[:, 13], 'Un': sn_data[:, 21], 'Up': sn_data[:, 22],
+                                  'mstar_n': sn_data[:, 23], 'mstar_p': sn_data[:, 24]}
             self.supernova_sim.append(supernova_sim_dict)
         print("Loaded", len(self.supernova_sim), "supernova time steps")
 
@@ -139,29 +143,29 @@ class RadiusIntegral:
         grav_lapse_calc[sterile_energy < (self.collision_integral.sterile_mass / grav_lapse)] = 0.0
         return grav_lapse_calc
 
-    def sterile_absorption(self, start_idx, supernova_sim, debug=False):
+    def sterile_absorption(self, start_idx, supernova_sim, debug=False, expfactor=1, num_line=35, num_costheta=5):
         """
         Within the dense SN core sterile neutrinos can be absorbed through interactions. This integrates over
         the possible processes and acts as an average suppression to the sterile neutrino production.
         Reference: https://arxiv.org/pdf/2503.13607
         Average suppression: Eq.(7)
         Associated collision integral: Eq.(8)
-        For \int ds the limits are 0 <= s <= 2Renv
+        For integral ds the limits are 0 <= s <= 2Renv
         """
-        if not self.include_absorption:
+        radius = supernova_sim['radius'][start_idx]
+        if not self.include_absorption or radius > self.abs_cutoff:
             return 1.0
 
         ## Integration steps
         # The line integral
-        upper_line_limit = 2. * self.core_cutoff
-        sline = np.linspace(0., upper_line_limit, num=15)
+        # upper_line_limit = 2. * self.core_cutoff
+        upper_line_limit = 2. * self.abs_cutoff
+        sline = np.linspace(0., upper_line_limit, num=num_line)
         delta_s = np.diff(sline)[0]
         # The cos(theta) integral
-        cos_theta = np.linspace(-1., 1., num=10)
+        cos_theta = np.linspace(-1., 1., num=num_costheta)
         delta_cos = np.abs(np.diff(cos_theta))[0]
-        length_to_energy_conv = 5.08e17 #8.06e12
-
-        radius = supernova_sim['radius'][start_idx]
+        length_to_energy_conv =  expfactor * 5.08e17 * (2. * np.pi) #8.06e12
 
         # Calculate the decay contribution
         decay_dict = self.collision_integral.interactions.sterile_decays(sterile_mass=self.collision_integral.sterile_mass,
@@ -170,19 +174,34 @@ class RadiusIntegral:
 
         decay_integral = 0
         abs_integral = 0
+        abs_integral_list = []
+        abs_decay_list = []
         for cos_t in cos_theta: # integral across all paths/lines
             integral = 0
             r_tilda = np.sqrt(radius ** 2 + sline ** 2 + 2. * radius * sline * cos_t)
             for i, rt in enumerate(r_tilda): # line integral
-                if rt > self.core_cutoff:
+                # if rt > self.core_cutoff:
+                if rt > self.abs_cutoff:
                     decay_integral = 0
                     for key in decay_dict:
-                        decay_integral += length_to_energy_conv * sline[i] * decay_dict[key]
+                        decay_integral += sline[i] * decay_dict[key]
                     break
                 radius_idx = np.argmin(np.abs(supernova_sim['radius'] - rt))
-                integral += length_to_energy_conv * delta_s * self.collision_integral.integrate_interactions(sn_sim=supernova_sim, index=radius_idx,
-                                                                          collision_kind=self.absorption_collision_kind)
-            abs_integral += np.exp(-integral - decay_integral) * delta_cos
+                ###############
+                # temp = supernova_sim['temp'][radius_idx] * 1.0e-3
+                ps = self.collision_integral.get_ps(grid=self.collision_integral.grid)
+                es = self.energy(momentum=ps, mass=self.collision_integral.sterile_mass)
+                # factor = (2. * np.pi ** 2 / ps) * np.exp(es / temp)
+                factor = es / ps
+                ###############
+                # integral += delta_s * np.abs(self.collision_integral.integrate_interactions(sn_sim=supernova_sim, index=radius_idx,
+                #                                                           collision_kind=self.absorption_collision_kind, is_absorption=True))
+                integral += delta_s * factor * np.abs(self.collision_integral.integrate_interactions(sn_sim=supernova_sim, index=radius_idx,
+                                                                          collision_kind=self.absorption_collision_kind, is_absorption=True))
+            abs_integral += np.exp(-(integral + decay_integral) * length_to_energy_conv) * delta_cos
+            if debug:
+                abs_integral_list.append(integral)
+                abs_decay_list.append(decay_integral)
 
         # decay_integral = 0
         # for smax, cos_t in zip(slist, cos_theta):
@@ -191,7 +210,10 @@ class RadiusIntegral:
 
         # abs_integral += np.exp(-decay_integral)
 
-        if debug: print("ABS:", 0.5 * abs_integral, "-", integral, "-", decay_integral)
+        if debug:
+            print("ABS:", 0.5 * abs_integral, "-", integral, "-", decay_integral)
+            return abs_integral_list, decay_integral
+
         return 0.5 * abs_integral
 
     def radius_integral_generator(self, ps, supernova_sim):
@@ -201,19 +223,26 @@ class RadiusIntegral:
         variables only contribute constant factors. The radius of the core is configurable but a
         suggested radius is 20km, reference: https://arxiv.org/pdf/2503.13607
         """
-        delta_radius = np.diff(supernova_sim['radius'])#[::self.radius_sample_step])
+        # delta_radius = np.diff(supernova_sim['radius'])#[::self.radius_sample_step])
         grav_lapse = supernova_sim['grav_lapse']
-        total_radius = supernova_sim['radius'][1:]
-        index_range = range(0, self.radius_sample_step * len(total_radius[::self.radius_sample_step])-1, self.radius_sample_step)
-        print("Radius idx range: ", index_range, "/", len(total_radius[::self.radius_sample_step]))
+        total_radius = supernova_sim['radius']
+        # index_range = range(0, self.radius_sample_step * len(total_radius[::self.radius_sample_step])-1, self.radius_sample_step)
+        # index_range = range(0, len(total_radius[::self.radius_sample_step]))
+        index_range = np.arange(0, len(total_radius))
+        print("Radius idx range: ", index_range[0], "/", len(total_radius[::self.radius_sample_step]))
 
-        for idx, radius in zip(index_range, total_radius[::self.radius_sample_step]):
+        prev_radius = 0
+        for idx, radius in zip(index_range[::self.radius_sample_step], total_radius[::self.radius_sample_step]):
             if (idx % 25) == 0 and idx != 0: print("Core Radius:", round(radius * 1.e-5, 2), "[km]")
             if radius > self.core_cutoff:
                 break
-            integral = self.collision_integral.integrate_interactions(sn_sim=supernova_sim, index=idx + 1,
-                                                                      collision_kind=self.collision_kind)
-            rint = radius * radius * integral * delta_radius[idx] * self.gravitational_lapse(ps=ps, grav_lapse=grav_lapse[idx + 1])
+            integral = self.collision_integral.integrate_interactions(sn_sim=supernova_sim, index=idx,
+                                                                      collision_kind=self.collision_kind, is_absorption=False)
+            # rint = radius * radius * integral * delta_radius[idx] * self.gravitational_lapse(ps=ps, grav_lapse=grav_lapse[idx])
+            mid_radius = (radius + prev_radius) / 2.
+            # rint = radius * radius * integral * (radius - prev_radius) * self.gravitational_lapse(ps=ps, grav_lapse=grav_lapse[idx])
+            rint = mid_radius * mid_radius * integral * (radius - prev_radius) * self.gravitational_lapse(ps=ps,grav_lapse=grav_lapse[idx])
+            prev_radius = radius
             yield rint, idx
 
     def sterile_differential_number(self):
@@ -239,8 +268,8 @@ class RadiusIntegral:
                 absorption = self.sterile_absorption(start_idx=idx, supernova_sim=sn_sim)
                 radius_integral += integral * ps * sterile_energy * absorption
             radius_integral *= dt
-
-        differential_sterile_number = (1. / (2. * np.pi**2)) * radius_integral * self.number_density_conversion
+        # The d^3r -> 4pi r^2 dr so prefactor is 4pi / 2pi^2 = 2/pi
+        differential_sterile_number = (2. / np.pi) * radius_integral * self.number_density_conversion
 
         if self.save_to_file:
             out_dict = {'sterile_mass': self.collision_integral.sterile_mass,
@@ -319,11 +348,19 @@ class RadiusIntegral:
         Integrate the differential sterile neutrino luminosity dL/dE to get the luminosity L.
         """
         # FIXME needs to be dE
-        luminosity = 0
-        for i, dt, sn_sim in enumerate(zip(self.delta_time, self.supernova_sim)):
+        luminosity = []
+        time = []
+        accum_time = 0
+        for i, (dt, sn_sim) in enumerate(zip(self.delta_time, self.supernova_sim)):
             print("Timestep:", i, "/", len(self.supernova_sim))
-            tmp_dl, sterile_energy = self.sterile_differential_luminosity(supernova_sim=self.supernova_sim, save_to_file=False)
-            luminosity += (tmp_dl *dt)
+            accum_time += dt
+            tmp_dl, sterile_energy = self.sterile_differential_luminosity(supernova_sim=sn_sim, save_to_file=False)
+            energy_integrated = 0
+            delta_energy = np.diff(sterile_energy)[0]
+            for dl in tmp_dl:
+                energy_integrated += dl * delta_energy
+            luminosity.append(energy_integrated)
+            time.append(accum_time)
 
         if self.save_to_file:
             out_dict = {'sterile_mass': self.collision_integral.sterile_mass,
@@ -332,3 +369,5 @@ class RadiusIntegral:
             with open(self.output_file, 'wb') as f:
                 pickle.dump(out_dict, f)
             print("Saved Luminosity to file", self.output_file)
+
+        return luminosity, time

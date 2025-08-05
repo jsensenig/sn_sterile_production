@@ -884,6 +884,8 @@ class Interaction(Particle):
             return eff_mass + (sn_sim[chem_potential][index] - sn_sim['Up'][index]) * self.mev_units
         elif particle_type == 'neutron':
             return eff_mass + (sn_sim[chem_potential][index] - sn_sim['Un'][index]) * self.mev_units
+        elif particle_type == 'nu_s':
+            return 0.
         else:
             return sn_sim[chem_potential][index] * self.mev_units
 
@@ -895,14 +897,18 @@ class Interaction(Particle):
         else:
             return mass
 
-    def get_reaction(self, interaction, grid, supernova_sim, index):
+    def get_reaction(self, interaction, grid, supernova_sim, index, is_absorption):
 
         # Update the radius dependent variables
         temp = supernova_sim['temp'][index] * self.mev_units
 
         reaction_list = []
         for i, part in enumerate(interaction['interaction']):
-            side = -1 if i < 2 else 1  # 0+1 -> 2+3 LHS is -1 and RHS is +1
+            if is_absorption:
+                side = +1 if i < 2 else -1  # 0+1 -> 2+3 LHS is -1 and RHS is +1 (abs so reaction in reverse)
+            else:
+                side = -1 if i < 2 else 1  # 0+1 -> 2+3 LHS is -1 and RHS is +1
+            # side = 1 if i < 2 else -1  # 0+1 -> 2+3 LHS is -1 and RHS is +1 (flipped for a test-bad)
             stats = self.fermi_statistics if part['statistic'] == 'fermi' else self.sterile_statistics
             # chem_potential = supernova_sim[part['chemical_potential']][index] * self.mev_units
             part_mass = self.get_mass(sn_sim=supernova_sim, index=index, mass=part['mass'],
